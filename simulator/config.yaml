@@ -1,0 +1,109 @@
+# VidyutDrishti synthetic-data simulator - default config.
+#
+# Every knob is exposed here so the generator has no magic numbers.
+
+seed: 42
+
+# --- Topology ---
+dt_count: 2
+meters_per_dt: 30
+category_mix:
+  domestic: 0.70
+  commercial: 0.25
+  industrial: 0.05
+
+# --- Time ---
+start_date: "2024-01-01"
+days: 180
+slot_minutes: 15   # 96 slots per day
+
+# --- Base daily energy per category (kWh/day) ---
+daily_kwh_mean:
+  domestic: 12.0
+  commercial: 60.0
+  industrial: 200.0
+daily_kwh_std:
+  domestic: 3.0
+  commercial: 15.0
+  industrial: 50.0
+
+# --- Diurnal shape (24 weights; normalised to average 1.0) ---
+diurnal_weights:
+  domestic: [0.35, 0.30, 0.28, 0.28, 0.30, 0.40, 0.70, 1.10,
+             1.20, 1.00, 0.90, 0.85, 0.80, 0.75, 0.75, 0.85,
+             1.05, 1.40, 1.80, 1.90, 1.70, 1.30, 0.80, 0.50]
+  commercial: [0.20, 0.20, 0.20, 0.20, 0.20, 0.25, 0.50, 0.90,
+               1.60, 1.80, 1.80, 1.80, 1.70, 1.80, 1.80, 1.70,
+               1.60, 1.50, 1.20, 0.80, 0.50, 0.35, 0.25, 0.20]
+  industrial: [0.90, 0.90, 0.90, 0.90, 0.90, 0.95, 1.05, 1.15,
+               1.20, 1.20, 1.20, 1.15, 1.10, 1.15, 1.20, 1.20,
+               1.15, 1.10, 1.00, 0.95, 0.95, 0.90, 0.90, 0.90]
+
+# --- Seasonal multipliers ---
+summer_months: [3, 4, 5, 6]       # March to June
+summer_multiplier: 1.25
+monsoon_months: [6, 7, 8, 9]      # June to September (overlap w/ summer = tempered)
+monsoon_multiplier: 0.92
+weekend_multiplier:
+  domestic: 1.10
+  commercial: 0.70
+  industrial: 0.95
+holiday_multiplier: 0.75
+
+# Explicit holiday dates (ISO). If null, simulator will try to import
+# the `holidays` package. Prototype tests pass explicit dates to avoid
+# requiring the dependency.
+holiday_dates: null
+
+# --- Electrical quality ---
+voltage_mean: 230.0
+voltage_std: 5.0
+voltage_min: 210.0
+voltage_max: 250.0
+pf_range:
+  domestic: [0.90, 0.98]
+  commercial: [0.85, 0.95]
+  industrial: [0.80, 0.92]
+
+# --- Technical loss on DT (fraction of metered total) ---
+dt_technical_loss_min: 0.02
+dt_technical_loss_max: 0.06
+
+# --- Measurement noise ---
+noise_std_fraction: 0.08   # kWh noise as fraction of slot mean
+
+# --- Missing-reading injection (per-reading probabilities) ---
+missing_short_prob: 0.005    # <1 hour gaps
+missing_medium_prob: 0.002   # 1-6 hour gaps
+missing_long_prob: 0.0005    # >6 hour gaps
+
+# --- Injected theft scenarios ---
+theft_scenarios:
+  - meter_id: "DT1-M12"
+    kind: hook_bypass
+    start_day: 90
+    end_day: 180
+    severity: 0.95            # fraction of load suppressed
+  - meter_id: "DT2-M07"
+    kind: gradual_tampering
+    start_day: 60
+    end_day: 110
+    severity: 0.65            # peak suppression after full ramp
+  - meter_id: "DT1-M23"
+    kind: meter_stop
+    start_day: 130
+    end_day: 180
+    severity: 1.0             # readings go to zero
+
+# --- Decoys (legitimate patterns that might otherwise look suspicious) ---
+decoys:
+  - meter_id: "DT2-M15"
+    kind: vacancy
+    start_day: 100
+    end_day: 180
+    severity: 0.90
+  - meter_id: "DT1-M01"     # whole-DT fault on DT1, centred on this meter
+    kind: equipment_fault
+    start_day: 150
+    end_day: 152
+    severity: 1.0

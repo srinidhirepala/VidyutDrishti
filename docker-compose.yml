@@ -7,10 +7,15 @@ services:
     image: timescale/timescaledb:2.16.1-pg15
     container_name: vd-timescaledb
     restart: unless-stopped
+    # Credentials MUST come from infra/.env - compose refuses to start
+    # if DB_PASSWORD is unset. `cp infra/.env.sample infra/.env` and
+    # change the password before first use.
+    env_file:
+      - infra/.env
     environment:
-      POSTGRES_DB: ${DB_NAME:-vidyutdrishti}
-      POSTGRES_USER: ${DB_USER:-vidyutdrishti}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-vidyutdrishti}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME must be set in infra/.env}
+      POSTGRES_USER: ${DB_USER:?DB_USER must be set in infra/.env}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in infra/.env}
     ports:
       - "5432:5432"
     volumes:
@@ -23,7 +28,7 @@ services:
     container_name: vd-backend
     restart: unless-stopped
     env_file:
-      - infra/.env.sample
+      - infra/.env
     depends_on:
       - timescaledb
     ports:
