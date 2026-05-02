@@ -1,0 +1,25 @@
+# VidyutDrishti backend image.
+# Final optimisation (multi-stage, slim base) happens in Feature 22.
+
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# System deps needed for Prophet / pandas wheels
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY backend/pyproject.toml /app/backend/pyproject.toml
+COPY backend/app /app/backend/app
+COPY simulator /app/simulator
+
+RUN pip install --upgrade pip && pip install -e /app/backend
+
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
