@@ -1,0 +1,26 @@
+# Illustrative Karnataka / India public holidays for the 2024 window.
+# Loaded into the `holiday` table on first boot. Real deployments can
+# replace this file or use the `holidays` package at runtime.
+
+region: KA
+holidays:
+  - { date: "2024-01-01", name: "New Year's Day" }
+  - { date: "2024-01-15", name: "Makar Sankranti / Pongal" }
+  - { date: "2024-01-26", name: "Republic Day" }
+  - { date: "2024-03-08", name: "Maha Shivaratri" }
+  - { date: "2024-03-25", name: "Holi" }
+  - { date: "2024-03-29", name: "Good Friday" }
+  - { date: "2024-04-09", name: "Ugadi" }
+  - { date: "2024-04-11", name: "Id-ul-Fitr" }
+  - { date: "2024-04-14", name: "Ambedkar Jayanti" }
+  - { date: "2024-05-01", name: "May Day" }
+  - { date: "2024-06-17", name: "Bakrid" }
+  - { date: "2024-08-15", name: "Independence Day" }
+  - { date: "2024-08-19", name: "Raksha Bandhan" }
+  - { date: "2024-08-26", name: "Krishna Janmashtami" }
+  - { date: "2024-09-07", name: "Ganesh Chaturthi" }
+  - { date: "2024-10-02", name: "Gandhi Jayanti" }
+  - { date: "2024-10-12", name: "Dussehra" }
+  - { date: "2024-11-01", name: "Kannada Rajyotsava" }
+  - { date: "2024-11-01", name: "Deepavali" }
+  - { date: "2024-12-25", name: "Christmas" }

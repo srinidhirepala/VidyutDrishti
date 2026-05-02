@@ -1,0 +1,17 @@
+# Illustrative tariff slabs for leakage quantification (Feature 15).
+# Rates are prototype estimates inspired by public Bescom / Karnataka
+# LT tariffs; replace with the exact current schedule for production.
+# Rates are INR per kWh. `slab_to: null` denotes an open upper bound.
+
+slabs:
+  domestic:
+    - { slab_from: 0,   slab_to: 30,  rate_inr: 3.65 }
+    - { slab_from: 30,  slab_to: 100, rate_inr: 4.95 }
+    - { slab_from: 100, slab_to: 200, rate_inr: 6.85 }
+    - { slab_from: 200, slab_to: null, rate_inr: 8.15 }
+  commercial:
+    - { slab_from: 0,   slab_to: 50,  rate_inr: 6.95 }
+    - { slab_from: 50,  slab_to: 200, rate_inr: 8.35 }
+    - { slab_from: 200, slab_to: null, rate_inr: 9.75 }
+  industrial:
+    - { slab_from: 0,   slab_to: null, rate_inr: 7.20 }
