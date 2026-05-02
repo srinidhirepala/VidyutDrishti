@@ -1,0 +1,56 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# --- Node / Vite ---
+node_modules/
+.vite/
+dist/
+.cache/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Editors ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# --- Docker / DB ---
+pgdata/
+*.sqlite
+*.db
+
+# --- Models & large artefacts ---
+models/
+*.pkl
+*.joblib
+
+# --- Generated data ---
+data/
+reports/
+
+# --- Env files ---
+.env
+.env.*
+!infra/.env.sample
