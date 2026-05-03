@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react'
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts'
 import './Dashboard.css'
@@ -201,6 +202,38 @@ function Dashboard() {
               <Tooltip />
               <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Meters" />
             </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="chart-card wide">
+          <h3>Feeder Demand Forecast — F-MAL-01 (24h Prophet-style)</h3>
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={[
+              { hour: '00:00', forecast: 1250, lower: 1060, upper: 1440 },
+              { hour: '03:00', forecast: 1180, lower: 1000, upper: 1360 },
+              { hour: '06:00', forecast: 2650, lower: 2250, upper: 3050 },
+              { hour: '09:00', forecast: 3400, lower: 2890, upper: 3910 },
+              { hour: '12:00', forecast: 3550, lower: 3020, upper: 4080 },
+              { hour: '15:00', forecast: 3600, lower: 3060, upper: 4140 },
+              { hour: '18:00', forecast: 4100, lower: 3490, upper: 4710 },
+              { hour: '21:00', forecast: 4300, lower: 3660, upper: 4950 },
+              { hour: '23:00', forecast: 2100, lower: 1780, upper: 2420 },
+            ]}>
+              <defs>
+                <linearGradient id="colorForecast" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="hour" />
+              <YAxis />
+              <Tooltip formatter={(v: number) => `${v.toLocaleString()} kW`} />
+              <Legend />
+              <Area type="monotone" dataKey="upper" stroke="#bfdbfe" fill="transparent" name="90th percentile" strokeDasharray="3 3" />
+              <Area type="monotone" dataKey="forecast" stroke="#3b82f6" fill="url(#colorForecast)" name="Forecast" strokeWidth={2} />
+              <Area type="monotone" dataKey="lower" stroke="#bfdbfe" fill="transparent" name="10th percentile" strokeDasharray="3 3" />
+            </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>

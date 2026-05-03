@@ -20,6 +20,7 @@ try:
     from app.ingestion.pipeline import IngestionPipeline
     from app.detection.confidence import ConfidenceEngine, LayerSignals
     from app.inspection.queue import InspectionQueue
+    from app.forecast.engine import FeederForecaster
     INGESTION_AVAILABLE = True
 except ImportError:
     INGESTION_AVAILABLE = False
@@ -90,6 +91,27 @@ class FeedbackResponse(BaseModel):
     """Response model for feedback submission."""
     success: bool
     message: str
+
+
+class ForecastPoint(BaseModel):
+    """Single forecast timestep."""
+    timestamp: str
+    forecast_kw: float
+    lower_kw: float
+    upper_kw: float
+    components: dict[str, float]
+
+
+class ForecastResponse(BaseModel):
+    """Feeder-level 24-hour forecast with zone risk."""
+    feeder_id: str
+    created_at: str
+    zone_risk: str
+    risk_score: float
+    peak_forecast_kw: float
+    max_capacity_kw: float
+    utilization_pct: float
+    points: list[ForecastPoint]
 
 
 # ========== Mock Data Store (for prototype) ==========
@@ -287,3 +309,79 @@ async def submit_feedback(feedback: FeedbackRequest) -> FeedbackResponse:
         )
     else:
         raise HTTPException(status_code=500, detail="Failed to record feedback")
+
+
+# ========== Forecast Endpoint ==========
+
+def _generate_mock_forecast(feeder_id: str) -> ForecastResponse:
+    """Generate realistic 24-hour forecast for prototype demo."""
+    from datetime import datetime, timedelta
+    import random
+
+    random.seed(hash(feeder_id) % 10000)
+    base = datetime.utcnow().replace(minute=0, second=0, microsecond=0)
+    points: list[ForecastPoint] = []
+
+    # Diurnal pattern: low at night, peak 18-21h
+    for i in range(24):
+        ts = base + timedelta(hours=i)
+        hour = ts.hour
+        if 0 <= hour < 6:
+            base_kw = 1200 + random.gauss(0, 100)
+        elif 6 <= hour < 10:
+            base_kw = 2800 + random.gauss(0, 150)
+        elif 10 <= hour < 17:
+            base_kw = 3500 + random.gauss(0, 120)
+        elif 17 <= hour < 22:
+            base_kw = 4200 + random.gauss(0, 180)
+        else:
+            base_kw = 2000 + random.gauss(0, 100)
+
+        forecast = max(500, base_kw)
+        lower = forecast * 0.85
+        upper = forecast * 1.15
+
+        points.append(
+            ForecastPoint(
+                timestamp=ts.isoformat(),
+                forecast_kw=round(forecast, 2),
+                lower_kw=round(lower, 2),
+                upper_kw=round(upper, 2),
+                components={"trend": round(forecast * 0.6, 2), "weekly": round(forecast * 0.25, 2), "yearly": round(forecast * 0.15, 2)},
+            )
+        )
+
+    peak = max(p.forecast_kw for p in points)
+    max_cap = 5000.0
+    util = peak / max_cap
+
+    if util >= 0.88:
+        zone_risk = "HIGH"
+        risk_score = min(1.0, util)
+    elif util >= 0.75:
+        zone_risk = "MEDIUM"
+        risk_score = util
+    else:
+        zone_risk = "LOW"
+        risk_score = util * 0.5
+
+    return ForecastResponse(
+        feeder_id=feeder_id,
+        created_at=base.isoformat(),
+        zone_risk=zone_risk,
+        risk_score=round(risk_score, 3),
+        peak_forecast_kw=round(peak, 1),
+        max_capacity_kw=max_cap,
+        utilization_pct=round(util * 100, 1),
+        points=points,
+    )
+
+
+@router.get("/forecast/{feeder_id}", response_model=ForecastResponse)
+async def get_forecast(feeder_id: str) -> ForecastResponse:
+    """Get 24-hour demand forecast for a feeder with zone risk classification.
+
+    Returns Prophet-style point forecast with 10th/90th percentile confidence
+    bands, peak utilization, and zone risk (LOW/MEDIUM/HIGH).
+    """
+    return _generate_mock_forecast(feeder_id)
