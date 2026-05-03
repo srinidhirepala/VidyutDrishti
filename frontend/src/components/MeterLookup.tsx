@@ -30,49 +30,29 @@ function MeterLookup() {
 
   const handleSearch = async () => {
     if (!meterId) return
-    
+
     setLoading(true)
     setError(null)
-    
-    // Mock API call - in production: fetch(`/api/v1/meters/${meterId}/status`)
-    setTimeout(() => {
-      if (meterId.toUpperCase() === 'M001') {
-        setStatus({
-          meter_id: 'M001',
-          date: '2024-01-15',
-          confidence: 0.85,
-          is_anomaly: true,
-          anomaly_type: 'sudden_drop',
-          layer_signals: {
-            l0_is_anomaly: false,
-            l1_is_anomaly: true,
-            l1_z_score: 3.5,
-            l2_is_anomaly: true,
-            l3_is_anomaly: false,
-          },
-        })
-      } else if (meterId.toUpperCase() === 'M999') {
-        setError('Meter not found')
+
+    try {
+      const res = await fetch(`/api/v1/meters/${meterId.toUpperCase()}/status`)
+      if (!res.ok) {
+        if (res.status === 404) {
+          setError('Meter not found')
+        } else {
+          setError(`Error: ${res.status}`)
+        }
         setStatus(null)
       } else {
-        // Default mock response for any meter
-        setStatus({
-          meter_id: meterId.toUpperCase(),
-          date: '2024-01-15',
-          confidence: 0.3,
-          is_anomaly: false,
-          anomaly_type: null,
-          layer_signals: {
-            l0_is_anomaly: false,
-            l1_is_anomaly: false,
-            l1_z_score: 0.5,
-            l2_is_anomaly: false,
-            l3_is_anomaly: false,
-          },
-        })
+        const data = await res.json()
+        setStatus(data)
       }
+    } catch (err) {
+      setError('Network error')
+      setStatus(null)
+    } finally {
       setLoading(false)
-    }, 500)
+    }
   }
 
   return (

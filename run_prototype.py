@@ -218,37 +218,155 @@ for i, item in enumerate(items[:3], 1):
     print(f"    {i}. {item.meter_id} (confidence: {item.confidence:.2f})")
 
 # =============================================================================
-# STEP 8: Evaluation
+# STEP 4b: Detection Layer 0 (DT Energy Balance)
 # =============================================================================
-print("\n[STEP 8] Evaluation Metrics...")
+print("\n[STEP 4b] Running Layer 0 - DT Energy Balance...")
+
+from app.detection.layer0_balance import BalanceAnalyzer
+
+b_analyzer = BalanceAnalyzer(threshold_pct=3.0)
+
+# Prepare DT daily readings
+dt_readings['date'] = pd.to_datetime(dt_readings['ts']).dt.date
+dt_daily = dt_readings.groupby(['dt_id', 'date']).agg({
+    'kwh_in': 'sum',
+}).reset_index()
+dt_daily['feeder_id'] = dt_daily['dt_id'].apply(lambda x: f"F{x[2:]}")
+dt_daily['technical_loss_pct'] = 6.0
+
+l0_results = b_analyzer.analyze_batch(dt_daily, meter_daily, topology, target_date)
+anomalies_l0 = [r for r in l0_results if r.is_anomaly]
+print(f"  - Analyzed {len(l0_results)} DTs")
+print(f"  - L0 Anomalies detected: {len(anomalies_l0)}")
+
+# =============================================================================
+# STEP 4c: Detection Layer 3 (Isolation Forest)
+# =============================================================================
+print("\n[STEP 4c] Running Layer 3 - Isolation Forest...")
+
+from app.detection.layer3_isoforest import IsoForestAnalyzer
+
+# Layer 3 requires engineered features (total_kwh, rolling7_kwh, etc.)
+# For prototype runner we skip detailed feature engineering and leave
+# L3 signals empty; the confidence engine gracefully handles missing L3.
+l3_results = []
+anomalies_l3 = []
+print(f"  - Skipped (feature engineering not included in prototype runner)")
+print(f"  - L3 Anomalies detected: 0")
+
+# =============================================================================
+# STEP 5 (revised): Confidence Engine on ALL meters
+# =============================================================================
+print("\n[STEP 5] Running Confidence Engine on all meters...")
+
+from app.detection.confidence import ConfidenceEngine, LayerSignals
+
+engine = ConfidenceEngine()
+
+# Build signals for every meter
+all_meter_ids = meter_daily["meter_id"].unique()
+signals_rows = []
+for mid in all_meter_ids:
+    l0 = next((r for r in l0_results if r.dt_id == topology[topology["meter_id"] == mid]["dt_id"].iloc[0]), None) if mid in topology["meter_id"].values else None
+    l1 = next((r for r in z_results if r.meter_id == mid), None)
+    l2 = next((r for r in p_results if r.meter_id == mid), None)
+    l3 = next((r for r in l3_results if r.meter_id == mid), None)
+    signals_rows.append({
+        "meter_id": mid,
+        "dt_id": topology[topology["meter_id"] == mid]["dt_id"].iloc[0] if mid in topology["meter_id"].values else "",
+        "feeder_id": topology[topology["meter_id"] == mid]["feeder_id"].iloc[0] if mid in topology["meter_id"].values else "",
+        "date": target_date,
+        "l0_is_anomaly": l0.is_anomaly if l0 else False,
+        "l0_dt_imbalance_pct": l0.imbalance_pct if l0 else None,
+        "l1_z_score": l1.z_score if l1 else None,
+        "l1_is_anomaly": l1.is_anomaly if l1 else False,
+        "l2_deviation_pct": l2.deviation_pct if l2 else None,
+        "l2_is_anomaly": l2.is_anomaly if l2 else False,
+        "l3_anomaly_score": l3.anomaly_score if l3 else None,
+        "l3_is_anomaly": l3.is_anomaly if l3 else False,
+    })
+
+signals_df = pd.DataFrame(signals_rows)
+conf_results = engine.compute_batch(signals_df)
+conf_results = [r for r in conf_results if r.confidence > 0.0]
+high_conf = [r for r in conf_results if r.confidence >= 0.5]
+print(f"  - Computed confidence for {len(conf_results)} meters")
+print(f"  - High confidence (>0.5): {len(high_conf)}")
+for r in high_conf[:3]:
+    print(f"    * {r.meter_id}: confidence={r.confidence:.2f}, rank={r.rank}")
+
+# =============================================================================
+# STEP 8: EVALUATION with real ground truth from simulator
+# =============================================================================
+print("\n[STEP 8] Evaluation Metrics (against synthetic ground truth)...")
 
 from app.evaluation.harness import EvaluationHarness, GroundTruthLabel, DetectionPrediction
 
 harness = EvaluationHarness()
 
-# Mock evaluation
-# Use actual meter IDs from generated data
-anomaly_meters = [r.meter_id for r in z_results if r.is_anomaly][:2]
-normal_meters = [r.meter_id for r in z_results if not r.is_anomaly][:1]
+# Ground truth: all meters with injected theft scenarios are True anomalies
+# Decoys (vacancy, equipment_fault) are legitimate, so False for theft
+# All others are normal
 
-ground_truth = [
-    GroundTruthLabel(anomaly_meters[0], target_date, True, "theft"),
-    GroundTruthLabel(normal_meters[0], target_date, False, "normal"),
-] if anomaly_meters and normal_meters else []
+# Known theft meters from config
+theft_meters = {t["meter_id"] for t in raw_config.get("theft_scenarios", [])}
+# Known decoy meters (not theft)
+decoy_meters = {d["meter_id"] for d in raw_config.get("decoys", [])}
 
-predictions = [
-    DetectionPrediction(anomaly_meters[0], target_date, 0.85, True),
-    DetectionPrediction(normal_meters[0], target_date, 0.2, False),
-] if anomaly_meters and normal_meters else []
+# Build ground truth for ALL meters
+ground_truth = []
+predictions = []
+for mid in all_meter_ids:
+    is_theft = mid in theft_meters
+    is_decoy = mid in decoy_meters
+    # Ground truth: True only for actual theft, False for normal and decoys
+    gt_label = GroundTruthLabel(
+        mid,
+        target_date,
+        is_theft,
+        "theft" if is_theft else ("decoy" if is_decoy else "normal"),
+    )
+    ground_truth.append(gt_label)
 
-if ground_truth and predictions:
-    eval_result = harness.evaluate(ground_truth, predictions, "demo")
-    print(f"  - Accuracy: {eval_result.metrics.accuracy:.2%}")
-    print(f"  - Precision: {eval_result.metrics.precision:.2%}")
-    print(f"  - Recall: {eval_result.metrics.recall:.2%}")
-    print(f"  - F1 Score: {eval_result.metrics.f1_score:.2%}")
-else:
-    print("  - No data available for evaluation")
+    # Prediction from confidence engine
+    conf = next((r.confidence for r in conf_results if r.meter_id == mid), 0.0)
+    pred = DetectionPrediction(
+        mid,
+        target_date,
+        conf,
+        conf >= 0.5,
+        "sudden_drop" if conf >= 0.5 else None,
+    )
+    predictions.append(pred)
+
+# Evaluate at multiple thresholds
+print("\n  Threshold sweep:")
+for thresh in [0.3, 0.5, 0.7, 0.9]:
+    harness_thresh = EvaluationHarness(confidence_threshold=thresh)
+    eval_result = harness_thresh.evaluate(ground_truth, predictions, f"thresh_{thresh}")
+    m = eval_result.metrics
+    print(f"    @ {thresh:.1f}:  Acc={m.accuracy:.1%}  Prec={m.precision:.1%}  Rec={m.recall:.1%}  F1={m.f1_score:.2f}  (TP={m.true_positives} FP={m.false_positives} FN={m.false_negatives} TN={m.true_negatives})")
+
+# Default evaluation at 0.5
+eval_result = harness.evaluate(ground_truth, predictions, "full_pipeline")
+m = eval_result.metrics
+print(f"\n  Default threshold (0.5):")
+print(f"    Accuracy:    {m.accuracy:.1%}")
+print(f"    Precision:   {m.precision:.1%}")
+print(f"    Recall:      {m.recall:.1%}")
+print(f"    F1 Score:    {m.f1_score:.2f}")
+print(f"    Specificity: {m.specificity:.1%}")
+
+# Detection lag analysis
+print(f"\n  Detection lag analysis:")
+theft_detected = 0
+total_theft = len(theft_meters)
+for mid in theft_meters:
+    conf = next((r.confidence for r in conf_results if r.meter_id == mid), 0.0)
+    if conf >= 0.5:
+        theft_detected += 1
+print(f"    Theft meters in ground truth: {total_theft}")
+print(f"    Detected at HIGH confidence:  {theft_detected} ({theft_detected/total_theft:.0%})" if total_theft > 0 else "    N/A")
 
 # =============================================================================
 # SUMMARY
@@ -259,6 +377,8 @@ print("=" * 70)
 print(f"\nTotal meters analyzed: {len(z_results)}")
 print(f"Total anomalies detected: {len([r for r in z_results if r.is_anomaly])}")
 print(f"Inspection queue size: {len(items)}")
+print(f"Evaluation samples: {len(ground_truth)}")
 print("\nAll 22 features implemented and functional!")
+print("(Layer 3 Isolation Forest skipped in runner due to feature-engineering dependency)")
 print("Run 'python tests/e2e/test_end_to_end.py' for full E2E validation.")
 print("=" * 70)

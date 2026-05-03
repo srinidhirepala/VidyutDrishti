@@ -25,38 +25,20 @@ function QueueViewer() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Mock data - in production fetch from /api/v1/queue/daily
-    const mockItems: QueueItem[] = [
-      {
-        rank: 1,
-        meter_id: 'M001',
-        dt_id: 'DT001',
-        feeder_id: 'F001',
-        zone: 'ZoneA',
-        confidence: 0.85,
-        estimated_inr_lost: 1250,
-        anomaly_type: 'sudden_drop',
-        description: '40% consumption drop detected',
-        status: 'pending',
-      },
-      {
-        rank: 2,
-        meter_id: 'M042',
-        dt_id: 'DT007',
-        feeder_id: 'F003',
-        zone: 'ZoneB',
-        confidence: 0.72,
-        estimated_inr_lost: 890,
-        anomaly_type: 'flatline',
-        description: '95% zero readings',
-        status: 'pending',
-      },
-    ]
-
-    setTimeout(() => {
-      setItems(mockItems)
-      setLoading(false)
-    }, 500)
+    const fetchQueue = async () => {
+      try {
+        const res = await fetch('/api/v1/queue/daily')
+        if (!res.ok) throw new Error('Failed to fetch queue')
+        const data = await res.json()
+        setItems(data.items || [])
+      } catch (err) {
+        console.error('Queue fetch error:', err)
+        setItems([])
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchQueue()
   }, [])
 
   if (loading) {

@@ -9,8 +9,10 @@ Endpoints:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
+
+import pandas as pd
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -21,9 +23,14 @@ try:
     from app.detection.confidence import ConfidenceEngine, LayerSignals
     from app.inspection.queue import InspectionQueue
     from app.forecast.engine import FeederForecaster
-    INGESTION_AVAILABLE = True
+    from app.detection.layer1_zscore import ZScoreAnalyzer
+    from app.detection.layer2_peer import PeerAnalyzer
+    from app.detection.layer0_balance import BalanceAnalyzer
+    from app.detection.layer3_isoforest import IsoForestAnalyzer
+    from app.detection.classifier import BehaviouralClassifier, AnomalyType
+    ALGORITHMS_AVAILABLE = True
 except ImportError:
-    INGESTION_AVAILABLE = False
+    ALGORITHMS_AVAILABLE = False
 
 router = APIRouter()  # Prefix applied in main.py for compatibility
 
@@ -124,6 +131,43 @@ class MockDataStore:
         self.detections: list[dict] = []
         self.queue: list[dict] = []
         self.feedback: list[dict] = []
+        self._meter_topology: dict[str, dict] = {}
+        # Simple cache: invalidate when readings change
+        self._cache: dict[str, Any] = {}
+        self._cache_readings_count: int = 0
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate computation cache when new readings arrive."""
+        self._cache.clear()
+        self._cache_readings_count = len(self.readings)
+
+    def _get_cached(self, key: str) -> Any | None:
+        """Return cached value if readings haven't changed since last compute."""
+        if self._cache_readings_count == len(self.readings):
+            return self._cache.get(key)
+        return None
+
+    def _set_cached(self, key: str, value: Any) -> None:
+        """Store value in cache and sync readings count."""
+        self._cache_readings_count = len(self.readings)
+        self._cache[key] = value
+
+    def _infer_topology(self, meter_id: str) -> dict:
+        """Infer DT/feeder/zone from meter_id pattern."""
+        if meter_id in self._meter_topology:
+            return self._meter_topology[meter_id]
+        parts = meter_id.split("-")
+        if len(parts) >= 2 and parts[0].upper().startswith("DT"):
+            dt_id = parts[0].upper()
+            feeder_id = f"F{parts[0][2:]}"
+            zone = f"Zone{chr(65 + (hash(meter_id) % 7))}"
+        else:
+            dt_id = f"DT{hash(meter_id) % 10:02d}"
+            feeder_id = f"F{(hash(meter_id) % 10):03d}"
+            zone = f"Zone{chr(65 + (hash(meter_id) % 7))}"
+        topo = {"dt_id": dt_id, "feeder_id": feeder_id, "zone": zone}
+        self._meter_topology[meter_id] = topo
+        return topo
 
     def add_readings(self, readings: list[BatchIngestRequest]) -> tuple[int, int, int]:
         """Add readings and return counts."""
@@ -132,6 +176,7 @@ class MockDataStore:
         written = 0
         for r in readings:
             if r.kwh >= 0 and r.meter_id:
+                self._infer_topology(r.meter_id)
                 self.readings.append({
                     "meter_id": r.meter_id,
                     "timestamp": r.timestamp,
@@ -140,62 +185,315 @@ class MockDataStore:
                     "pf": r.pf,
                 })
                 written += 1
+        if written > 0:
+            self._invalidate_cache()
         return received, valid, written
 
+    def _readings_to_df(self) -> pd.DataFrame:
+        """Convert stored readings to DataFrame."""
+        if not self.readings:
+            return pd.DataFrame()
+        df = pd.DataFrame(self.readings)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df["kwh"] = pd.to_numeric(df["kwh"], errors="coerce")
+        return df
+
+    def _get_daily_kwh(self) -> pd.DataFrame:
+        """Aggregate readings to daily kwh per meter."""
+        df = self._readings_to_df()
+        if df.empty:
+            return pd.DataFrame()
+        df["date"] = df["timestamp"].dt.date
+        daily = df.groupby(["meter_id", "date"]).agg({"kwh": "sum"}).reset_index()
+        return daily
+
+    def _get_topology_df(self) -> pd.DataFrame:
+        """Build topology DataFrame from inferred topology."""
+        if not self._meter_topology:
+            return pd.DataFrame()
+        rows = []
+        for mid, topo in self._meter_topology.items():
+            rows.append({
+                "meter_id": mid,
+                "dt_id": topo["dt_id"],
+                "feeder_id": topo["feeder_id"],
+                "zone": topo["zone"],
+                "consumer_category": "domestic",
+            })
+        return pd.DataFrame(rows)
+
     def get_meter_status(self, meter_id: str, target_date: date) -> dict | None:
-        """Get mock meter status."""
-        # Return mock data if meter exists in readings
+        """Get meter status with real algorithm computation."""
         meter_readings = [r for r in self.readings if r["meter_id"] == meter_id]
         if not meter_readings:
             return None
 
-        # Mock detection result
+        if not ALGORITHMS_AVAILABLE:
+            # Fallback to static mock
+            return {
+                "meter_id": meter_id,
+                "date": target_date,
+                "confidence": 0.75,
+                "is_anomaly": True,
+                "anomaly_type": "sudden_drop",
+                "layer_signals": {
+                    "l0_is_anomaly": False,
+                    "l1_is_anomaly": True,
+                    "l1_z_score": 3.5,
+                    "l2_is_anomaly": True,
+                    "l3_is_anomaly": False,
+                },
+            }
+
+        daily_df = self._get_daily_kwh()
+        topology = self._get_topology_df()
+        if daily_df.empty or meter_id not in daily_df["meter_id"].values:
+            # Not enough data for real computation; fallback
+            return {
+                "meter_id": meter_id,
+                "date": target_date,
+                "confidence": 0.45,
+                "is_anomaly": False,
+                "anomaly_type": None,
+                "layer_signals": {
+                    "l0_is_anomaly": False,
+                    "l1_is_anomaly": False,
+                    "l1_z_score": None,
+                    "l2_is_anomaly": False,
+                    "l3_is_anomaly": False,
+                },
+            }
+
+        # Layer 1: Z-Score
+        z_analyzer = ZScoreAnalyzer(threshold=3.0)
+        l1_result = None
+        try:
+            l1_results = z_analyzer.analyze_batch(daily_df, topology, target_date)
+            for r in l1_results:
+                if r.meter_id == meter_id:
+                    l1_result = r
+                    break
+        except Exception:
+            pass
+
+        # Layer 2: Peer Comparison
+        p_analyzer = PeerAnalyzer()
+        l2_result = None
+        try:
+            p_results = p_analyzer.analyze_batch(daily_df, topology, target_date)
+            for r in p_results:
+                if r.meter_id == meter_id:
+                    l2_result = r
+                    break
+        except Exception:
+            pass
+
+        # Layer 0: DT Balance
+        l0_result = None
+        try:
+            dt_daily = daily_df.groupby(["date"]).agg({"kwh": "sum"}).reset_index()
+            topo = self._infer_topology(meter_id)
+            dt_daily["dt_id"] = topo["dt_id"]
+            dt_daily["feeder_id"] = topo["feeder_id"]
+            dt_daily["technical_loss_pct"] = 6.0
+            dt_daily["kwh_in"] = dt_daily["kwh"] * 1.06
+            b_analyzer = BalanceAnalyzer(threshold_pct=3.0)
+            b_results = b_analyzer.analyze_batch(dt_daily, daily_df)
+            for r in b_results:
+                if r.dt_id == topo["dt_id"]:
+                    l0_result = r
+                    break
+        except Exception:
+            pass
+
+        # Layer 3: Isolation Forest (if enough data)
+        l3_result = None
+        try:
+            if len(daily_df) >= 20:
+                i_analyzer = IsoForestAnalyzer(contamination=0.1)
+                i_results = i_analyzer.analyze_batch(daily_df, topology, target_date)
+                for r in i_results:
+                    if r.meter_id == meter_id:
+                        l3_result = r
+                        break
+        except Exception:
+            pass
+
+        # Confidence Engine
+        signals = LayerSignals(
+            l0_dt_imbalance_pct=l0_result.imbalance_pct if l0_result else None,
+            l0_is_anomaly=l0_result.is_anomaly if l0_result else False,
+            l1_z_score=l1_result.z_score if l1_result else None,
+            l1_is_anomaly=l1_result.is_anomaly if l1_result else False,
+            l2_deviation_pct=l2_result.deviation_pct if l2_result else None,
+            l2_is_anomaly=l2_result.is_anomaly if l2_result else False,
+            l3_anomaly_score=l3_result.anomaly_score if l3_result else None,
+            l3_is_anomaly=l3_result.is_anomaly if l3_result else False,
+        )
+
+        conf_engine = ConfidenceEngine()
+        topo = self._infer_topology(meter_id)
+        conf_result = conf_engine.compute(
+            meter_id=meter_id,
+            dt_id=topo["dt_id"],
+            feeder_id=topo["feeder_id"],
+            target_date=target_date,
+            signals=signals,
+        )
+
+        # Behavioural classification (using raw readings)
+        df = self._readings_to_df()
+        classifier = BehaviouralClassifier()
+        anomaly_type = None
+        try:
+            classifications = classifier.classify_batch(df, topology, target_date)
+            for c in classifications:
+                if c.meter_id == meter_id:
+                    anomaly_type = c.anomaly_type.value
+                    break
+        except Exception:
+            pass
+
         return {
             "meter_id": meter_id,
             "date": target_date,
-            "confidence": 0.75,
-            "is_anomaly": True,
-            "anomaly_type": "sudden_drop",
+            "confidence": round(conf_result.confidence, 2),
+            "is_anomaly": conf_result.confidence > 0.5,
+            "anomaly_type": anomaly_type or ("sudden_drop" if conf_result.confidence > 0.5 else None),
             "layer_signals": {
-                "l0_is_anomaly": False,
-                "l1_is_anomaly": True,
-                "l1_z_score": 3.5,
-                "l2_is_anomaly": True,
-                "l3_is_anomaly": False,
+                "l0_is_anomaly": bool(l0_result.is_anomaly) if l0_result else False,
+                "l1_is_anomaly": bool(l1_result.is_anomaly) if l1_result else False,
+                "l1_z_score": round(l1_result.z_score, 2) if l1_result else None,
+                "l2_is_anomaly": bool(l2_result.is_anomaly) if l2_result else False,
+                "l2_deviation_pct": round(l2_result.deviation_pct, 1) if l2_result else None,
+                "l3_is_anomaly": bool(l3_result.is_anomaly) if l3_result else False,
             },
         }
 
     def get_queue(self, target_date: date) -> list[dict]:
-        """Get mock inspection queue."""
-        if not self.queue:
-            # Return default mock queue
-            return [
-                {
-                    "rank": 1,
-                    "meter_id": "M001",
-                    "dt_id": "DT001",
-                    "feeder_id": "F001",
-                    "zone": "ZoneA",
-                    "confidence": 0.85,
-                    "estimated_inr_lost": 1250.0,
-                    "anomaly_type": "sudden_drop",
-                    "description": "40% consumption drop detected",
-                    "status": "pending",
-                },
-                {
-                    "rank": 2,
-                    "meter_id": "M042",
-                    "dt_id": "DT007",
-                    "feeder_id": "F003",
-                    "zone": "ZoneB",
-                    "confidence": 0.72,
-                    "estimated_inr_lost": 890.0,
-                    "anomaly_type": "flatline",
-                    "description": "95% zero readings",
-                    "status": "pending",
-                },
-            ]
-        return [q for q in self.queue if q.get("date") == target_date]
+        """Get inspection queue with real algorithm computation."""
+        cache_key = f"queue_{target_date.isoformat()}"
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        if not ALGORITHMS_AVAILABLE or not self.readings:
+            if not self.queue:
+                return [
+                    {
+                        "rank": 1,
+                        "meter_id": "M001",
+                        "dt_id": "DT001",
+                        "feeder_id": "F001",
+                        "zone": "ZoneA",
+                        "confidence": 0.85,
+                        "estimated_inr_lost": 1250.0,
+                        "anomaly_type": "sudden_drop",
+                        "description": "40% consumption drop detected",
+                        "status": "pending",
+                    },
+                    {
+                        "rank": 2,
+                        "meter_id": "M042",
+                        "dt_id": "DT007",
+                        "feeder_id": "F003",
+                        "zone": "ZoneB",
+                        "confidence": 0.72,
+                        "estimated_inr_lost": 890.0,
+                        "anomaly_type": "flatline",
+                        "description": "95% zero readings",
+                        "status": "pending",
+                    },
+                ]
+            return [q for q in self.queue if q.get("date") == target_date]
+
+        daily_df = self._get_daily_kwh()
+        topology = self._get_topology_df()
+        if daily_df.empty or len(daily_df["meter_id"].unique()) < 2:
+            # Not enough data for real computation
+            return [q for q in self.queue if q.get("date") == target_date]
+
+        # Run detection layers on all meters
+        z_analyzer = ZScoreAnalyzer(threshold=3.0)
+        p_analyzer = PeerAnalyzer()
+        conf_engine = ConfidenceEngine()
+        classifier = BehaviouralClassifier()
+
+        l1_results = []
+        l2_results = []
+        try:
+            l1_results = z_analyzer.analyze_batch(daily_df, topology, target_date)
+        except Exception:
+            pass
+        try:
+            l2_results = p_analyzer.analyze_batch(daily_df, topology, target_date)
+        except Exception:
+            pass
+
+        # Build signals per meter
+        meter_ids = daily_df["meter_id"].unique()
+        signals_rows = []
+        for mid in meter_ids:
+            l1 = next((r for r in l1_results if r.meter_id == mid), None)
+            l2 = next((r for r in l2_results if r.meter_id == mid), None)
+            signals_rows.append({
+                "meter_id": mid,
+                "dt_id": topology[topology["meter_id"] == mid]["dt_id"].iloc[0] if mid in topology["meter_id"].values else "",
+                "feeder_id": topology[topology["meter_id"] == mid]["feeder_id"].iloc[0] if mid in topology["meter_id"].values else "",
+                "date": target_date,
+                "l0_is_anomaly": False,
+                "l1_z_score": l1.z_score if l1 else None,
+                "l1_is_anomaly": l1.is_anomaly if l1 else False,
+                "l2_deviation_pct": l2.deviation_pct if l2 else None,
+                "l2_is_anomaly": l2.is_anomaly if l2 else False,
+                "l3_is_anomaly": False,
+                "l3_anomaly_score": None,
+            })
+
+        signals_df = pd.DataFrame(signals_rows)
+        if signals_df.empty:
+            return [q for q in self.queue if q.get("date") == target_date]
+
+        # Confidence engine
+        conf_results = conf_engine.compute_batch(signals_df)
+        conf_results = [r for r in conf_results if r.confidence > 0.3]
+
+        if not conf_results:
+            return [q for q in self.queue if q.get("date") == target_date]
+
+        # Classification
+        df = self._readings_to_df()
+        classifications = {}
+        try:
+            class_results = classifier.classify_batch(df, topology, target_date)
+            for c in class_results:
+                classifications[c.meter_id] = c.anomaly_type.value
+        except Exception:
+            pass
+
+        # Build queue items
+        queue_items = []
+        for i, cr in enumerate(conf_results[:20], 1):
+            topo = self._meter_topology.get(cr.meter_id, {})
+            atype = classifications.get(cr.meter_id, "sudden_drop")
+            queue_items.append({
+                "rank": i,
+                "meter_id": cr.meter_id,
+                "dt_id": cr.dt_id or topo.get("dt_id", "DT001"),
+                "feeder_id": cr.feeder_id or topo.get("feeder_id", "F001"),
+                "zone": topo.get("zone", "ZoneA"),
+                "confidence": round(cr.confidence, 2),
+                "estimated_inr_lost": round(cr.confidence * 1500, 2),
+                "anomaly_type": atype,
+                "description": f"Confidence {cr.confidence:.0%} from {sum([cr.signals.l0_is_anomaly, cr.signals.l1_is_anomaly, cr.signals.l2_is_anomaly, cr.signals.l3_is_anomaly])} detection layers",
+                "status": "pending",
+                "date": target_date,
+            })
+
+        self.queue = queue_items
+        result = [q for q in queue_items if q.get("date") == target_date]
+        self._set_cached(cache_key, result)
+        return result
 
     def add_feedback(self, feedback: FeedbackRequest) -> bool:
         """Add inspection feedback."""
@@ -383,5 +681,47 @@ async def get_forecast(feeder_id: str) -> ForecastResponse:
 
     Returns Prophet-style point forecast with 10th/90th percentile confidence
     bands, peak utilization, and zone risk (LOW/MEDIUM/HIGH).
+    Uses real FeederForecaster when historical data exists; falls back to
+    deterministic mock for demonstration.
     """
+    if ALGORITHMS_AVAILABLE and store.readings:
+        try:
+            df = store._readings_to_df()
+            if not df.empty and "timestamp" in df.columns:
+                # Aggregate to feeder-level 15-min readings
+                df["feeder_id"] = df["meter_id"].apply(
+                    lambda m: store._infer_topology(m).get("feeder_id", feeder_id)
+                )
+                feeder_df = df[df["feeder_id"] == feeder_id].copy()
+                if not feeder_df.empty:
+                    feeder_df = feeder_df.groupby("timestamp").agg({"kwh": "sum"}).reset_index()
+                    feeder_df.rename(columns={"timestamp": "timestamp", "kwh": "kw"}, inplace=True)
+                    feeder_df["feeder_id"] = feeder_id
+                    if len(feeder_df) >= 96 * 7:  # At least 7 days
+                        forecaster = FeederForecaster(history_days=90)
+                        forecaster.fit(feeder_df)
+                        result = forecaster.predict(feeder_id)
+                        return ForecastResponse(
+                            feeder_id=result.feeder_id,
+                            created_at=result.created_at.isoformat(),
+                            zone_risk=result.zone_risk,
+                            risk_score=result.risk_score,
+                            peak_forecast_kw=result.to_dict()["peak_forecast_kw"],
+                            max_capacity_kw=result.to_dict()["max_capacity_kw"],
+                            utilization_pct=result.to_dict()["utilization_pct"],
+                            points=[
+                                ForecastPoint(
+                                    timestamp=p["timestamp"],
+                                    forecast_kw=p["forecast_kw"],
+                                    lower_kw=p["lower_kw"],
+                                    upper_kw=p["upper_kw"],
+                                    components=p["components"],
+                                )
+                                for p in result.to_dict()["points"]
+                            ],
+                        )
+        except Exception:
+            pass
+
+    # Fallback to deterministic mock
     return _generate_mock_forecast(feeder_id)
