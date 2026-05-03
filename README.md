@@ -140,18 +140,37 @@ VidyutDrishti/
 
 ---
 
-## 7. Quickstart (target; wired up in Feature 22)
+## 7. Quickstart
+
+The prototype is fully wired and ready to run:
 
 ```bash
 git clone https://github.com/srinidhirepala/VidyutDrishti.git
 cd VidyutDrishti
+# Copy and edit env file (set passwords)
+cp infra/.env.sample infra/.env
+# Start all services
 docker compose up --build
-# dashboard:      http://localhost:5173
-# API docs:       http://localhost:8000/docs
-# TimescaleDB:    localhost:5432 (user/pass in infra/.env.sample)
 ```
 
-Until Feature 22 lands, individual components can be run via their own READMEs inside `backend/`, `simulator/`, and `frontend/`.
+**Access Points:**
+- Dashboard:      http://localhost:5173
+- API docs:       http://localhost:8000/docs
+- Health check:   http://localhost:8000/health
+- TimescaleDB:    localhost:5432 (credentials in `infra/.env`)
+
+**API Endpoints (all functional with real algorithms):**
+- `POST /api/v1/ingest/batch` — Ingest meter readings
+- `GET /api/v1/meters/{id}/status` — Get anomaly detection status (L0-L3 + Confidence)
+- `GET /api/v1/queue/daily` — Prioritized inspection queue
+- `GET /api/v1/forecast/{feeder_id}` — 24-hour demand forecast
+- `POST /api/v1/feedback` — Submit inspection feedback
+
+**Run Prototype Evaluation:**
+```bash
+# Generate synthetic data, run all detection layers, output evaluation metrics
+python run_prototype.py
+```
 
 ---
 
