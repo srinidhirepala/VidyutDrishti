@@ -14,8 +14,9 @@ import Dashboard from './components/Dashboard'
 import QueueViewer from './components/QueueViewer'
 import MeterLookup from './components/MeterLookup'
 import FeedbackForm from './components/FeedbackForm'
+import ZoneRiskMap from './components/ZoneRiskMap'
 
-type View = 'dashboard' | 'queue' | 'meter' | 'feedback'
+type View = 'dashboard' | 'queue' | 'meter' | 'feedback' | 'map'
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
@@ -49,6 +50,12 @@ function App() {
           >
             Feedback
           </button>
+          <button 
+            className={currentView === 'map' ? 'active' : ''}
+            onClick={() => setCurrentView('map')}
+          >
+            Zone Map
+          </button>
         </nav>
       </header>
 
@@ -57,6 +64,7 @@ function App() {
         {currentView === 'queue' && <QueueViewer />}
         {currentView === 'meter' && <MeterLookup />}
         {currentView === 'feedback' && <FeedbackForm />}
+        {currentView === 'map' && <ZoneRiskMap />}
       </main>
 
       <footer className="app-footer">
