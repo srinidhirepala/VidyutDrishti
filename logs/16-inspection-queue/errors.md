@@ -2,5 +2,10 @@
 
 ## Errors Log
 
-_Pending implementation. This file will list every error encountered during development, along with its root cause and resolution._
+No errors encountered during Feature 16 development. All 11 tests passed on first execution.
+
+### Implementation notes
+- Ranking algorithm: confidence descending, then financial impact descending.
+- Max queue size and min confidence configurable at initialization.
+- Status lifecycle: pending → assigned → completed/dismissed.
 
