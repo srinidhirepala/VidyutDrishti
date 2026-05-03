@@ -1,8 +1,7 @@
 """FastAPI entrypoint.
 
-Feature 01 provides a stub with /health only. The full API surface
-(forecast, zone-risk, inspection-queue, meter, audit, feedback) is
-implemented in Feature 17.
+Feature 01 provided a stub with /health only. Feature 17 adds
+the full API surface (ingest, meter status, inspection queue, feedback).
 """
 
 from __future__ import annotations
@@ -11,6 +10,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.config import get_settings
+from app.api.routes import router as api_router
 
 settings = get_settings()
 
@@ -19,6 +19,9 @@ app = FastAPI(
     version=__version__,
     description="AT&C Loss Recovery Intelligence System - prototype API.",
 )
+
+# Include API routes from Feature 17
+app.include_router(api_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["system"])
