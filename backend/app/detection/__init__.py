@@ -4,6 +4,7 @@ from .layer1_zscore import ZScoreAnalyzer
 from .layer2_peer import PeerAnalyzer
 from .layer3_isoforest import IsoForestAnalyzer
 from .confidence import ConfidenceEngine, LayerSignals
+from .classifier import BehaviouralClassifier, AnomalyType
 
 __all__ = [
     "BalanceAnalyzer",
@@ -12,4 +13,6 @@ __all__ = [
     "IsoForestAnalyzer",
     "ConfidenceEngine",
     "LayerSignals",
+    "BehaviouralClassifier",
+    "AnomalyType",
 ]
