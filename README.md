@@ -174,7 +174,31 @@ python run_prototype.py
 
 ---
 
-## 8. Evaluation Targets
+## 8. Screenshots
+
+### Dashboard
+![Dashboard](./snapshots/01-dashboard.png)
+*Main dashboard with KPIs, consumption trends, anomaly timeline, and loss by zone.*
+
+### Inspection Queue
+![Inspection Queue](./snapshots/02-queue.png)
+*Prioritized inspection queue ranked by confidence score and estimated revenue loss.*
+
+### Meter Lookup
+![Meter Lookup](./snapshots/03-meter-lookup.png)
+*Meter status view showing 4-layer detection signals and confidence score.*
+
+### Zone Risk Map
+![Zone Risk Map](./snapshots/04-zone-map.png)
+*Leaflet-based Bengaluru heatmap showing zone risk classification (HIGH/MEDIUM/LOW).*
+
+### API Documentation
+![API Docs](./snapshots/05-api-docs.png)
+*Swagger UI with all 5 API endpoints documented and testable.*
+
+---
+
+## 9. Evaluation Targets
 
 | Metric | Target |
 |--------|--------|
