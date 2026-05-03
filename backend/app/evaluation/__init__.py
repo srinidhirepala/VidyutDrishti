@@ -3,6 +3,7 @@ from .metrics import mape, rmse, mae, bias
 from .baselines import NaiveBaseline, baseline_comparison
 from .backtest import Backtester, BacktestReport
 from .leakage import LeakageQuantifier
+from .harness import EvaluationHarness, EvaluationResult, GroundTruthLabel, DetectionPrediction
 
 __all__ = [
     "mape",
@@ -14,4 +15,8 @@ __all__ = [
     "Backtester",
     "BacktestReport",
     "LeakageQuantifier",
+    "EvaluationHarness",
+    "EvaluationResult",
+    "GroundTruthLabel",
+    "DetectionPrediction",
 ]
