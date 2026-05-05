@@ -15,8 +15,10 @@ import QueueViewer from './components/QueueViewer'
 import MeterLookup from './components/MeterLookup'
 import FeedbackForm from './components/FeedbackForm'
 import ZoneRiskMap from './components/ZoneRiskMap'
+import EvaluationMetrics from './components/EvaluationMetrics'
+import ROICalculator from './components/ROICalculator'
 
-type View = 'dashboard' | 'queue' | 'meter' | 'feedback' | 'map'
+type View = 'dashboard' | 'queue' | 'meter' | 'feedback' | 'map' | 'metrics' | 'roi'
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
@@ -56,6 +58,18 @@ function App() {
           >
             Zone Map
           </button>
+          <button
+            className={currentView === 'metrics' ? 'active' : ''}
+            onClick={() => setCurrentView('metrics')}
+          >
+            Metrics
+          </button>
+          <button
+            className={currentView === 'roi' ? 'active' : ''}
+            onClick={() => setCurrentView('roi')}
+          >
+            ROI
+          </button>
         </nav>
       </header>
 
@@ -65,6 +79,8 @@ function App() {
         {currentView === 'meter' && <MeterLookup />}
         {currentView === 'feedback' && <FeedbackForm />}
         {currentView === 'map' && <ZoneRiskMap />}
+        {currentView === 'metrics' && <EvaluationMetrics />}
+        {currentView === 'roi' && <ROICalculator />}
       </main>
 
       <footer className="app-footer">
