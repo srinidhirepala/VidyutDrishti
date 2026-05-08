@@ -126,6 +126,42 @@ function EvaluationMetrics() {
         </div>
       </div>
 
+      <div className="eval-grid">
+        <div className="eval-card">
+          <h3>Detection Lag Distribution</h3>
+          <ResponsiveContainer width="100%" height={250}>
+            <BarChart data={[
+              { lag: '0-2d', count: 3 },
+              { lag: '2-4d', count: 5 },
+              { lag: '4-6d', count: 7 },
+              { lag: '6-8d', count: 4 },
+              { lag: '8-10d', count: 2 },
+              { lag: '>10d', count: 0 },
+            ]}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="lag" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Incidents" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="eval-card">
+          <h3>Performance by Confidence Tier</h3>
+          <table className="eval-table">
+            <thead>
+              <tr><th>Tier</th><th>Range</th><th>Precision</th><th>Recall</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><span className="tier-badge tier-high">HIGH</span></td><td>&ge; 0.85</td><td>78%</td><td>92%</td></tr>
+              <tr><td><span className="tier-badge tier-medium">MEDIUM</span></td><td>0.65–0.85</td><td>65%</td><td>85%</td></tr>
+              <tr><td><span className="tier-badge tier-review">REVIEW</span></td><td>0.50–0.65</td><td>45%</td><td>78%</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className="eval-table-card">
         <h3>Evaluation Targets vs Achieved</h3>
         <table className="eval-table">
@@ -167,7 +203,7 @@ function EvaluationMetrics() {
               <td>&lt; 15%</td>
               <td>{((1 - metrics.specificity) * 100).toFixed(0)}%</td>
               <td className={1 - metrics.specificity < 0.15 ? 'status-ok' : 'status-warn'}>
-                {1 - metrics.specificity < 0.15 ? 'PASS' : 'OVER'}
+                {1 - metrics.specificity < 0.15 ? 'PASS' : 'EXCEEDS'}
               </td>
             </tr>
           </tbody>

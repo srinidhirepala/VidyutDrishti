@@ -22,6 +22,7 @@ import pandas as pd
 class AnomalyType(str, Enum):
     """Behavioural anomaly categories."""
     SUDDEN_DROP = "sudden_drop"
+    GRADUAL_DECLINE = "gradual_decline"
     SPIKE = "spike"
     FLATLINE = "flatline"
     ERRATIC = "erratic"
@@ -100,23 +101,18 @@ class BehaviouralClassifier:
 
         daily_kwh = float(df_day["kwh"].sum())
 
-        # Prior day (if available)
+        # Prior day (if available) — group by date to get daily totals
         prior_day_kwh = None
-        if not df_prior.empty and "kwh" in df_prior.columns:
-            # Get the most recent prior day
-            last_prior = df_prior.groupby(df_prior.index)["kwh"].sum().iloc[-1:]
-            if not last_prior.empty:
-                prior_day_kwh = float(last_prior.iloc[0])
-
-        # 7-day rolling mean (if available)
         rolling_7d_mean = None
-        if not df_prior.empty and len(df_prior) >= 1:
-            # Use prior days for rolling mean
-            prior_daily = df_prior.groupby(df_prior.index)["kwh"].sum()
-            if len(prior_daily) >= 6:  # Need 6 prior days for 7-day total
-                rolling_7d_mean = float(prior_daily.tail(6).mean())
-            else:
-                rolling_7d_mean = float(prior_daily.mean()) if len(prior_daily) > 0 else None
+        if not df_prior.empty and "kwh" in df_prior.columns:
+            prior_daily = (
+                df_prior.groupby("date")["kwh"].sum().sort_index()
+                if "date" in df_prior.columns
+                else df_prior.groupby(df_prior.index)["kwh"].sum()
+            )
+            if not prior_daily.empty:
+                prior_day_kwh = float(prior_daily.iloc[-1])
+                rolling_7d_mean = float(prior_daily.tail(7).mean())
 
         # Zero slots ratio
         zero_slots = (df_day["kwh"] < 0.01).sum()
@@ -174,18 +170,32 @@ class BehaviouralClassifier:
         if rolling_7d_mean and rolling_7d_mean > 0 and daily_kwh is not None:
             rolling_mean_ratio = daily_kwh / rolling_7d_mean
 
-        # Classification logic
+        # Classification logic — prefer rolling mean ratio over single-day change
+        # because both days may already be inside a theft period.
         anomaly_type = AnomalyType.NORMAL_PATTERN
         confidence = 0.5
         description = "Normal consumption pattern"
 
-        # Check for flatline (most distinctive)
+        # Check for flatline (most distinctive — meter_stop / full bypass)
         if zero_slots_ratio > self.FLATLINE_THRESHOLD:
             anomaly_type = AnomalyType.FLATLINE
             confidence = min(1.0, zero_slots_ratio)
             description = f"Flatline: {zero_slots_ratio*100:.0f}% of slots near zero (possible bypass/disconnect)"
 
-        # Check for sudden drop
+        # Check sustained low vs rolling baseline (catches both sudden and gradual)
+        elif rolling_mean_ratio is not None and rolling_mean_ratio < 0.5:
+            drop_pct = (1.0 - rolling_mean_ratio) * 100
+            # Distinguish sudden drop (single-day cliff) from gradual decline (weeks)
+            if daily_change_pct is not None and daily_change_pct < -40:
+                anomaly_type = AnomalyType.SUDDEN_DROP
+                confidence = min(1.0, abs(daily_change_pct) / 100)
+                description = f"Sudden drop: {abs(daily_change_pct):.0f}% decrease from prior day (hook bypass indicator)"
+            else:
+                anomaly_type = AnomalyType.GRADUAL_DECLINE
+                confidence = min(1.0, drop_pct / 100)
+                description = f"Gradual decline: consumption {drop_pct:.0f}% below 7-day average (meter tampering pattern)"
+
+        # Check for sudden drop via prior-day delta only (if rolling unavailable)
         elif daily_change_pct is not None and daily_change_pct < self.DROP_THRESHOLD:
             anomaly_type = AnomalyType.SUDDEN_DROP
             confidence = min(1.0, abs(daily_change_pct) / 100)
@@ -194,7 +204,7 @@ class BehaviouralClassifier:
         # Check for spike
         elif daily_change_pct is not None and daily_change_pct > self.SPIKE_THRESHOLD:
             anomaly_type = AnomalyType.SPIKE
-            confidence = min(1.0, daily_change_pct / 100)
+            confidence = min(1.0, daily_change_pct / 200)
             description = f"Spike: {daily_change_pct:.0f}% increase from prior day (meter fault/generation)"
 
         # Check for erratic/volatile

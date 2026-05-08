@@ -1,9 +1,9 @@
 /**
  * ZoneRiskMap Component
- * 
- * Bengaluru locality-level risk heatmap using Leaflet.
+ *
+ * DT-level risk heatmap using Leaflet.
+ * Zones are derived from actual ingested meter topology — no hardcoded data.
  * Zones colored by risk: HIGH (red), MEDIUM (orange), LOW (green).
- * Click for feeder-level forecast and anomaly summary.
  */
 
 import { useState, useEffect } from 'react'
@@ -14,28 +14,19 @@ import './ZoneRiskMap.css'
 interface ZoneData {
   id: string
   name: string
+  dt_id: string
+  feeder_id: string
   lat: number
   lng: number
   risk: 'HIGH' | 'MEDIUM' | 'LOW'
-  riskScore: number
-  feederId: string
-  peakForecastKw: number
-  utilizationPct: number
-  pendingInspections: number
-  estLossINR: number
+  risk_score: number
+  meter_count: number
+  total_kwh_today: number
+  pending_inspections: number
+  estimated_inr_lost: number
 }
 
-const ZONES: ZoneData[] = [
-  { id: 'Z1', name: 'Malleshwaram', lat: 12.9978, lng: 77.5708, risk: 'HIGH', riskScore: 0.92, feederId: 'F-MAL-01', peakForecastKw: 4600, utilizationPct: 92, pendingInspections: 12, estLossINR: 45000 },
-  { id: 'Z2', name: 'Koramangala', lat: 12.9279, lng: 77.6271, risk: 'MEDIUM', riskScore: 0.78, feederId: 'F-KOR-01', peakForecastKw: 3900, utilizationPct: 78, pendingInspections: 8, estLossINR: 32000 },
-  { id: 'Z3', name: 'Indiranagar', lat: 12.9719, lng: 77.6412, risk: 'MEDIUM', riskScore: 0.81, feederId: 'F-IND-01', peakForecastKw: 4050, utilizationPct: 81, pendingInspections: 6, estLossINR: 28000 },
-  { id: 'Z4', name: 'Jayanagar', lat: 12.9299, lng: 77.5823, risk: 'LOW', riskScore: 0.45, feederId: 'F-JAY-01', peakForecastKw: 2250, utilizationPct: 45, pendingInspections: 4, estLossINR: 15000 },
-  { id: 'Z5', name: 'Whitefield', lat: 12.9698, lng: 77.7499, risk: 'LOW', riskScore: 0.32, feederId: 'F-WHI-01', peakForecastKw: 1600, utilizationPct: 32, pendingInspections: 2, estLossINR: 5000 },
-  { id: 'Z6', name: 'Rajajinagar', lat: 12.9983, lng: 77.5525, risk: 'HIGH', riskScore: 0.89, feederId: 'F-RAJ-01', peakForecastKw: 4450, utilizationPct: 89, pendingInspections: 10, estLossINR: 38000 },
-  { id: 'Z7', name: 'BTM Layout', lat: 12.9165, lng: 77.6101, risk: 'MEDIUM', riskScore: 0.72, feederId: 'F-BTM-01', peakForecastKw: 3600, utilizationPct: 72, pendingInspections: 5, estLossINR: 21000 },
-]
-
-const RISK_COLORS = {
+const RISK_COLORS: Record<string, string> = {
   HIGH: '#ef4444',
   MEDIUM: '#f59e0b',
   LOW: '#10b981',
@@ -44,37 +35,60 @@ const RISK_COLORS = {
 function ZoneRiskMap() {
   const [selectedZone, setSelectedZone] = useState<ZoneData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [zones, setZones] = useState<ZoneData[]>([])
 
   useEffect(() => {
-    setTimeout(() => setLoading(false), 400)
+    const fetchZones = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/api/v1/zones/summary')
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        const data = await response.json()
+        setZones(data.zones)
+      } catch (err) {
+        console.error('Failed to fetch zone summary:', err)
+        setError('Could not load zone data. Is the backend running?')
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchZones()
   }, [])
 
   if (loading) {
     return <div className="zone-map loading">Loading zone risk map...</div>
   }
 
+  if (error) {
+    return <div className="zone-map loading">{error}</div>
+  }
+
+  if (zones.length === 0) {
+    return <div className="zone-map loading">No zone data yet. Ingest meter readings first.</div>
+  }
+
   return (
     <div className="zone-map">
-      <h2>Zone Risk Map — Bengaluru Distribution Network</h2>
-      
+      <h2>Zone Risk Map — Distribution Transformer Network</h2>
+
       <div className="map-legend">
         <div className="legend-item">
           <span className="legend-dot high" />
-          <span>HIGH Risk (&gt;88% utilization)</span>
+          <span>HIGH Risk (anomaly confidence &gt;65%)</span>
         </div>
         <div className="legend-item">
           <span className="legend-dot medium" />
-          <span>MEDIUM Risk (75-88%)</span>
+          <span>MEDIUM Risk (35–65%)</span>
         </div>
         <div className="legend-item">
           <span className="legend-dot low" />
-          <span>LOW Risk (&lt;75%)</span>
+          <span>LOW Risk (&lt;35%)</span>
         </div>
       </div>
 
       <div className="map-container">
         <MapContainer
-          center={[12.95, 77.60]}
+          center={[12.9716, 77.5946]}
           zoom={12}
           scrollWheelZoom={true}
           style={{ height: '500px', width: '100%', borderRadius: '8px' }}
@@ -83,45 +97,43 @@ function ZoneRiskMap() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
-          {ZONES.map((zone) => (
+          {zones.map((zone) => (
             <CircleMarker
               key={zone.id}
               center={[zone.lat, zone.lng]}
-              radius={18 + zone.riskScore * 20}
-              fillColor={RISK_COLORS[zone.risk]}
-              color={RISK_COLORS[zone.risk]}
-              fillOpacity={0.7}
+              radius={14 + zone.risk_score * 22}
+              fillColor={RISK_COLORS[zone.risk] ?? '#6b7280'}
+              color={RISK_COLORS[zone.risk] ?? '#6b7280'}
+              fillOpacity={0.75}
               weight={2}
-              eventHandlers={{
-                click: () => setSelectedZone(zone),
-              }}
+              eventHandlers={{ click: () => setSelectedZone(zone) }}
             >
               <Popup>
                 <div className="zone-popup">
-                  <h4>{zone.name}</h4>
+                  <h4>{zone.name} ({zone.dt_id})</h4>
                   <div className="popup-row">
                     <span className="popup-label">Risk Level:</span>
                     <span className={`popup-value ${zone.risk.toLowerCase()}`}>{zone.risk}</span>
                   </div>
                   <div className="popup-row">
                     <span className="popup-label">Feeder:</span>
-                    <span className="popup-value">{zone.feederId}</span>
+                    <span className="popup-value">{zone.feeder_id}</span>
                   </div>
                   <div className="popup-row">
-                    <span className="popup-label">Peak Forecast:</span>
-                    <span className="popup-value">{zone.peakForecastKw.toLocaleString()} kW</span>
+                    <span className="popup-label">Meters:</span>
+                    <span className="popup-value">{zone.meter_count}</span>
                   </div>
                   <div className="popup-row">
-                    <span className="popup-label">Utilization:</span>
-                    <span className="popup-value">{zone.utilizationPct}%</span>
+                    <span className="popup-label">kWh Today:</span>
+                    <span className="popup-value">{zone.total_kwh_today.toLocaleString()} kWh</span>
                   </div>
                   <div className="popup-row">
                     <span className="popup-label">Pending Inspections:</span>
-                    <span className="popup-value highlight">{zone.pendingInspections}</span>
+                    <span className="popup-value highlight">{zone.pending_inspections}</span>
                   </div>
                   <div className="popup-row">
                     <span className="popup-label">Est. Loss:</span>
-                    <span className="popup-value loss">₹{zone.estLossINR.toLocaleString()}</span>
+                    <span className="popup-value loss">₹{zone.estimated_inr_lost.toLocaleString()}</span>
                   </div>
                 </div>
               </Popup>
@@ -132,25 +144,25 @@ function ZoneRiskMap() {
 
       {selectedZone && (
         <div className="zone-detail">
-          <h3>Zone Detail: {selectedZone.name}</h3>
+          <h3>Zone Detail: {selectedZone.name} ({selectedZone.dt_id})</h3>
           <div className="detail-grid">
             <div className="detail-card">
               <h4>Risk Score</h4>
               <div className={`detail-value ${selectedZone.risk.toLowerCase()}`}>
-                {(selectedZone.riskScore * 100).toFixed(0)}%
+                {(selectedZone.risk_score * 100).toFixed(0)}%
               </div>
             </div>
             <div className="detail-card">
-              <h4>Peak Forecast</h4>
-              <div className="detail-value">{selectedZone.peakForecastKw.toLocaleString()} kW</div>
+              <h4>Meters in Zone</h4>
+              <div className="detail-value">{selectedZone.meter_count}</div>
             </div>
             <div className="detail-card">
               <h4>Pending Inspections</h4>
-              <div className="detail-value">{selectedZone.pendingInspections}</div>
+              <div className="detail-value">{selectedZone.pending_inspections}</div>
             </div>
             <div className="detail-card">
               <h4>Est. Revenue Loss</h4>
-              <div className="detail-value loss">₹{selectedZone.estLossINR.toLocaleString()}</div>
+              <div className="detail-value loss">₹{selectedZone.estimated_inr_lost.toLocaleString()}</div>
             </div>
           </div>
         </div>

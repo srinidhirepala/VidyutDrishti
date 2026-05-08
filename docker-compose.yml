@@ -33,6 +33,9 @@ services:
       - timescaledb
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend/app:/app/backend/app
+      - ./simulator:/app/simulator
 
   frontend:
     build:

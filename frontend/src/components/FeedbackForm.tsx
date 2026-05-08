@@ -30,11 +30,33 @@ function FeedbackForm() {
     e.preventDefault()
     setLoading(true)
     
-    // Mock API call - in production: POST /api/v1/feedback
-    setTimeout(() => {
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/feedback', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          meter_id: form.meter_id,
+          inspection_date: form.inspection_date,
+          was_anomaly: form.was_anomaly,
+          actual_kwh_observed: form.actual_kwh_observed ? parseFloat(form.actual_kwh_observed) : null,
+          notes: form.notes || null,
+        }),
+      })
+      
+      if (response.ok) {
+        setLoading(false)
+        setSubmitted(true)
+        window.dispatchEvent(new Event('queue-refresh'))
+      } else {
+        console.error('Feedback submission failed')
+        setLoading(false)
+      }
+    } catch (err) {
+      console.error('Feedback submission error:', err)
       setLoading(false)
-      setSubmitted(true)
-    }, 500)
+    }
   }
 
   if (submitted) {
@@ -73,7 +95,7 @@ function FeedbackForm() {
             id="meter_id"
             value={form.meter_id}
             onChange={(e) => setForm({...form, meter_id: e.target.value})}
-            placeholder="e.g., M001"
+            placeholder="e.g., DT1-M01"
             required
           />
         </div>

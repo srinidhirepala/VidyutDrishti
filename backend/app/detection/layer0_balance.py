@@ -1,7 +1,7 @@
 """Layer 0: DT Energy Balance Analysis.
 
 Compares DT incoming energy (kwh_in) against sum of downstream meter consumption
-plus expected technical losses. Flags imbalance beyond ±3% threshold.
+plus expected technical losses. Flags imbalance beyond ±8% threshold.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ class BalanceAnalyzer:
 
     def __init__(
         self,
-        threshold_pct: float = 3.0,
+        threshold_pct: float = 8.0,
         default_technical_loss: float = 6.0,  # 6% typical for LT distribution
     ) -> None:
         self.threshold_pct = threshold_pct

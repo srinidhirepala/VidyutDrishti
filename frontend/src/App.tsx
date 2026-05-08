@@ -22,6 +22,12 @@ type View = 'dashboard' | 'queue' | 'meter' | 'feedback' | 'map' | 'metrics' | '
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard')
+  const [mapVisited, setMapVisited] = useState(false)
+
+  const handleViewChange = (view: View) => {
+    if (view === 'map') setMapVisited(true)
+    setCurrentView(view)
+  }
 
   return (
     <div className="app">
@@ -30,43 +36,43 @@ function App() {
         <nav className="app-nav">
           <button 
             className={currentView === 'dashboard' ? 'active' : ''}
-            onClick={() => setCurrentView('dashboard')}
+            onClick={() => handleViewChange('dashboard')}
           >
             Dashboard
           </button>
           <button 
             className={currentView === 'queue' ? 'active' : ''}
-            onClick={() => setCurrentView('queue')}
+            onClick={() => handleViewChange('queue')}
           >
             Inspection Queue
           </button>
           <button 
             className={currentView === 'meter' ? 'active' : ''}
-            onClick={() => setCurrentView('meter')}
+            onClick={() => handleViewChange('meter')}
           >
             Meter Lookup
           </button>
           <button 
             className={currentView === 'feedback' ? 'active' : ''}
-            onClick={() => setCurrentView('feedback')}
+            onClick={() => handleViewChange('feedback')}
           >
             Feedback
           </button>
           <button 
             className={currentView === 'map' ? 'active' : ''}
-            onClick={() => setCurrentView('map')}
+            onClick={() => handleViewChange('map')}
           >
             Zone Map
           </button>
           <button
             className={currentView === 'metrics' ? 'active' : ''}
-            onClick={() => setCurrentView('metrics')}
+            onClick={() => handleViewChange('metrics')}
           >
             Metrics
           </button>
           <button
             className={currentView === 'roi' ? 'active' : ''}
-            onClick={() => setCurrentView('roi')}
+            onClick={() => handleViewChange('roi')}
           >
             ROI
           </button>
@@ -74,18 +80,14 @@ function App() {
       </header>
 
       <main className="app-main">
-        {currentView === 'dashboard' && <Dashboard />}
-        {currentView === 'queue' && <QueueViewer />}
-        {currentView === 'meter' && <MeterLookup />}
-        {currentView === 'feedback' && <FeedbackForm />}
-        {currentView === 'map' && <ZoneRiskMap />}
-        {currentView === 'metrics' && <EvaluationMetrics />}
-        {currentView === 'roi' && <ROICalculator />}
+        <div style={{ display: currentView === 'dashboard' ? 'block' : 'none' }}><Dashboard /></div>
+        <div style={{ display: currentView === 'queue' ? 'block' : 'none' }}><QueueViewer /></div>
+        <div style={{ display: currentView === 'meter' ? 'block' : 'none' }}><MeterLookup /></div>
+        <div style={{ display: currentView === 'feedback' ? 'block' : 'none' }}><FeedbackForm /></div>
+        {mapVisited && <div style={{ display: currentView === 'map' ? 'block' : 'none' }}><ZoneRiskMap /></div>}
+        <div style={{ display: currentView === 'metrics' ? 'block' : 'none' }}><EvaluationMetrics /></div>
+        <div style={{ display: currentView === 'roi' ? 'block' : 'none' }}><ROICalculator /></div>
       </main>
-
-      <footer className="app-footer">
-        <p>VidyutDrishti Prototype • Feature 18 • React + Vite + TypeScript</p>
-      </footer>
     </div>
   )
 }

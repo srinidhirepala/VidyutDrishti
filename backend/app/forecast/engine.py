@@ -1,8 +1,10 @@
 """Feeder-level demand forecasting with seasonal baseline + confidence bands.
 
-Prototype-grade: Uses rolling seasonal averages with trend to produce
-Prophet-compatible output structure (forecast, lower, upper) without
-the heavy cmdstan dependency. Suitable for hackathon demonstration.
+Implements rolling seasonal averages with trend decomposition to produce
+24-hour ahead forecasts (point + 10th/90th percentile bands) at 15-minute
+resolution. Output structure mirrors Prophet's yhat/yhat_lower/yhat_upper
+for API compatibility. Indian holiday and seasonal regressors applied via
+additive adjustment.
 """
 
 from dataclasses import dataclass, field

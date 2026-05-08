@@ -4,9 +4,37 @@
   margin: 0 auto;
 }
 
+.roi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .roi-container h2 {
-  margin: 0 0 8px;
+  margin: 0;
   color: #1e293b;
+}
+
+.roi-refresh-btn {
+  padding: 8px 16px;
+  background: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.roi-refresh-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.roi-refresh-btn:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
 }
 
 .roi-subtitle {
@@ -63,6 +91,7 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
+  min-height: 120px;
 }
 
 .roi-hero-item {

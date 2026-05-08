@@ -87,12 +87,15 @@ def _compute_peer_stats(
     deviation = target_value - mean
     deviation_pct = (deviation / mean * 100.0) if mean != 0 else None
 
-    # Anomaly if more than threshold_std standard deviations from mean
+    # Anomaly if more than threshold_std standard deviations from mean,
+    # OR if percentage deviation exceeds 60% (handles heterogeneous peer groups
+    # where inflated std suppresses the z-score despite extreme absolute deviation)
+    pct_anomaly = deviation_pct is not None and abs(deviation_pct) > 60.0
     if std > 0:
         z = abs(deviation) / std
-        is_anomaly = z > threshold_std
+        is_anomaly = z > threshold_std or pct_anomaly
     else:
-        is_anomaly = abs(deviation) > 0.01  # Small tolerance if no variation
+        is_anomaly = abs(deviation) > 0.01 or pct_anomaly
 
     return mean, std, n_peers, deviation, deviation_pct, is_anomaly
 
@@ -166,6 +169,88 @@ class PeerAnalyzer:
             computed_at=datetime.utcnow(),
         )
 
+    def _compute_streak_counts(
+        self,
+        meter_daily: pd.DataFrame,
+        topology: pd.DataFrame,
+        target_date: date,
+        streak_days: int,
+    ) -> dict[str, int]:
+        """Count how many days in the streak window each meter was anomalously below peers.
+
+        Only counts days where the meter's deviation from peer mean exceeds threshold_std
+        (matching the same criterion used in per-day anomaly flagging).
+        """
+        import datetime as _dt
+
+        cutoff = target_date - _dt.timedelta(days=streak_days - 1)
+
+        # Filter first (P4.1: avoid full copy of multi-month dataset)
+        if pd.api.types.is_datetime64_any_dtype(meter_daily["date"]):
+            mask = (meter_daily["date"].dt.date >= cutoff) & (meter_daily["date"].dt.date <= target_date)
+        else:
+            mask = (meter_daily["date"] >= cutoff) & (meter_daily["date"] <= target_date)
+
+        window = meter_daily.loc[mask].copy()
+        if window.empty:
+            return {}
+
+        if pd.api.types.is_datetime64_any_dtype(window["date"]):
+            window["_date"] = window["date"].dt.date
+        else:
+            window["_date"] = window["date"]
+
+        streak_merged = window.merge(topology, on="meter_id", how="left")
+        if streak_merged.empty or "dt_id" not in streak_merged.columns:
+            return {}
+
+        # Compute per-(dt, category, date) peer mean and std — same grouping as analyze()
+        peer_stats = (
+            streak_merged.groupby(["dt_id", "consumer_category", "_date"])["kwh"]
+            .agg(["mean", "std"])
+            .reset_index()
+            .rename(columns={"mean": "_peer_mean", "std": "_peer_std"})
+        )
+        streak_merged = streak_merged.merge(
+            peer_stats, on=["dt_id", "consumer_category", "_date"], how="left"
+        )
+        streak_merged["_peer_std"] = streak_merged["_peer_std"].fillna(0)
+
+        # Vectorised flag: below peer by > threshold_std * std (or > 0.01 when std=0)
+        dev = streak_merged["kwh"] - streak_merged["_peer_mean"]
+        has_std = streak_merged["_peer_std"] > 0
+        streak_merged["_flagged"] = (
+            (dev < 0)
+            & (
+                (has_std & (dev.abs() / streak_merged["_peer_std"].clip(lower=1e-9) > self.threshold_std))
+                | (~has_std & (dev.abs() > 0.01))
+            )
+        )
+
+        # Vectorised consecutive-streak count ending on target_date.
+        # For each meter, sort by date, assign a "break group" id (cumsum on ~_flagged),
+        # then the streak = size of the last group only if its last day == target_date.
+        sm = streak_merged[["meter_id", "_date", "_flagged"]].sort_values(
+            ["meter_id", "_date"]
+        )
+        sm["_break"] = (~sm["_flagged"]).astype(int)
+        sm["_group"] = sm.groupby("meter_id")["_break"].cumsum()
+
+        # For each (meter, group) count the days and find the max date in that group
+        grp_stats = (
+            sm.groupby(["meter_id", "_group"])
+            .agg(streak_len=("_flagged", "sum"), last_date=("_date", "max"))
+            .reset_index()
+        )
+        # Only keep the last group per meter (highest _group id = most recent run)
+        last_grp = grp_stats.sort_values("_group").groupby("meter_id").last().reset_index()
+        # Streak only counts if the run ends exactly on target_date (unbroken up to today)
+        last_grp["_streak"] = last_grp.apply(
+            lambda r: int(r["streak_len"]) if r["last_date"] == target_date else 0,
+            axis=1,
+        )
+        return last_grp.set_index("meter_id")["_streak"].astype(int).to_dict()
+
     def analyze_batch(
         self,
         meter_daily: pd.DataFrame,  # meter_id, date, kwh, consumer_category
@@ -199,6 +284,12 @@ class PeerAnalyzer:
         # Merge with topology
         merged = day_data.merge(topology, on="meter_id", how="left")
 
+        # 5-consecutive-day streak check per spec
+        STREAK_DAYS = 5
+        streak_counts = self._compute_streak_counts(
+            meter_daily, topology, target_date, STREAK_DAYS
+        )
+
         # Group by DT and category for peer groups
         for (dt_id, category), group in merged.groupby(["dt_id", "consumer_category"]):
             if len(group) < 2:  # Need at least 2 meters for comparison
@@ -226,6 +317,12 @@ class PeerAnalyzer:
                     peer_kwh=peer_series,
                 )
                 if result is not None:
+                    # Apply 5-consecutive-day streak requirement:
+                    # only flag as anomaly if meter has been below peer for STREAK_DAYS days
+                    if result.is_anomaly and (result.deviation_kwh or 0) < 0:
+                        streak = streak_counts.get(meter_id, 0)
+                        if streak < STREAK_DAYS:
+                            result.is_anomaly = False
                     results.append(result)
 
         return results

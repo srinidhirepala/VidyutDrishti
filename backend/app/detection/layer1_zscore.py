@@ -87,10 +87,12 @@ class ZScoreAnalyzer:
         threshold: float = 3.0,
         min_history_days: int = 7,
         lookback_days: int = 90,  # Use last 90 days for stats
+        early_baseline_days: int | None = None,  # If set, use first N days as baseline
     ) -> None:
         self.threshold = threshold
         self.min_history_days = min_history_days
         self.lookback_days = lookback_days
+        self.early_baseline_days = early_baseline_days
 
     def analyze(
         self,
@@ -122,22 +124,28 @@ class ZScoreAnalyzer:
         if len(prior) == 0:
             return None
 
-        # Limit to lookback window
-        cutoff = target_date - pd.Timedelta(days=self.lookback_days)
-        prior = prior[prior.index >= cutoff]
+        if self.early_baseline_days is not None:
+            # Use the first N available days as the clean baseline
+            prior_sorted = prior.sort_index()
+            prior = prior_sorted.iloc[: self.early_baseline_days]
+        else:
+            # Default: limit to lookback window ending at target_date
+            cutoff = target_date - pd.Timedelta(days=self.lookback_days)
+            prior = prior[prior.index >= cutoff]
 
         mean, std = _compute_stats(prior)
         if mean is None:
             return None
 
-        # Compute z-score
-        if std is None or std == 0:
-            z_score = 0.0 if actual == mean else float("inf")
+        # Compute z-score — cap at ±10.0 to avoid infinity from zero-variance meters
+        if std is None or std < 0.001:
+            deviation_fraction = abs(actual - mean) / (mean if mean > 0 else 1.0)
+            z_score = min(10.0, deviation_fraction * 10.0) * (-1 if actual < mean else 1)
         else:
             z_score = (actual - mean) / std
 
-        abs_z = abs(z_score) if z_score != float("inf") else float("inf")
-        is_anomaly = abs_z > self.threshold if abs_z != float("inf") else True
+        abs_z = abs(z_score)
+        is_anomaly = abs_z > self.threshold
 
         return ZScoreResult(
             meter_id=meter_id,

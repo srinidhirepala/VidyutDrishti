@@ -73,7 +73,7 @@ class IsoForestAnalyzer:
 
     def __init__(
         self,
-        contamination: float = 0.1,  # Expected proportion of anomalies
+        contamination: float = 0.03,  # Expected proportion of anomalies (PPT spec: 0.03)
         n_estimators: int = 100,
         random_state: int = 42,
         feature_columns: list[str] | None = None,
@@ -85,10 +85,11 @@ class IsoForestAnalyzer:
             "total_kwh",
             "rolling7_kwh",
             "peak_hour_kwh",
-            "trough_hour_kwh",
             "diurnal_mean",
-            "temp_ratio",
             "meter_health_score",
+            "zero_reading_rate",
+            "power_factor",
+            "trend_slope",
         ]
         self.model: IsolationForest | None = None
         self.model_version: str = ""

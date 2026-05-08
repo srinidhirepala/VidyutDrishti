@@ -111,16 +111,18 @@ class ConfidenceEngine:
         """Compute normalized 0-1 score for a layer.
 
         Returns higher score for more extreme anomalies.
+        An anomaly at exactly the threshold returns 1.0; sub-threshold
+        anomalies are clamped to 1.0 as well since is_anomaly already
+        filtered them. Magnitude scaling provides relative ranking.
         """
         if not is_anomaly:
             return 0.0
         if magnitude is None:
-            return 0.5  # Anomaly but no magnitude info
+            return 1.0  # Anomaly confirmed but no magnitude: full score
 
-        # Normalize by threshold
+        # Normalize: magnitude at threshold → 1.0, scale linearly above
         ratio = abs(magnitude) / threshold
-        # Cap at 1.0 for extremes
-        return min(1.0, ratio / 3.0)  # ratio=3 gives score=1.0
+        return min(1.0, ratio)
 
     def compute(
         self,

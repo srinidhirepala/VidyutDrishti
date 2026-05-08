@@ -28,24 +28,25 @@ function ROICalculator() {
   const [roi, setRoi] = useState<ROI | null>(null)
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    const fetchROI = async () => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams({
-          detection_rate: detectionRate.toString(),
-          avg_monthly_theft_inr: avgTheft.toString(),
-          atc_loss_pct: atcLoss.toString(),
-        })
-        const r = await fetch(`/api/v1/metrics/roi?${params}`)
-        const data = await r.json()
-        setRoi(data)
-      } catch (err) {
-        console.error('ROI fetch error:', err)
-      } finally {
-        setLoading(false)
-      }
+  const fetchROI = async () => {
+    setLoading(true)
+    try {
+      const params = new URLSearchParams({
+        detection_rate: detectionRate.toString(),
+        avg_monthly_theft_inr: avgTheft.toString(),
+        atc_loss_pct: atcLoss.toString(),
+      })
+      const r = await fetch(`/api/v1/metrics/roi?${params}`)
+      const data = await r.json()
+      setRoi(data)
+    } catch (err) {
+      console.error('ROI fetch error:', err)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     fetchROI()
   }, [detectionRate, avgTheft, atcLoss])
 
@@ -57,7 +58,16 @@ function ROICalculator() {
 
   return (
     <div className="roi-container">
-      <h2>ROI Projection — BESCOM Scale</h2>
+      <div className="roi-header">
+        <h2>ROI Projection — BESCOM Scale</h2>
+        <button 
+          className="roi-refresh-btn" 
+          onClick={fetchROI}
+          disabled={loading}
+        >
+          {loading ? 'Refreshing...' : 'Refresh Data'}
+        </button>
+      </div>
       <p className="roi-subtitle">
         Interactive model for projected savings across ~8.5M consumers.
         Adjust the sliders to explore deployment scenarios.
@@ -138,13 +148,13 @@ function ROICalculator() {
                   <td>{roi.bescom_consumers.toLocaleString('en-IN')}</td>
                 </tr>
                 <tr>
-                  <td>Estimated theft population (3%)</td>
-                  <td>{Math.floor(roi.bescom_consumers * 0.03).toLocaleString('en-IN')}</td>
+                  <td>Estimated theft population (1.5%)</td>
+                  <td>{Math.floor(roi.bescom_consumers * 0.015).toLocaleString('en-IN')}</td>
                 </tr>
                 <tr>
                   <td>Detected at {(roi.detection_rate * 100).toFixed(0)}% rate</td>
                   <td>
-                    {Math.floor(roi.bescom_consumers * 0.03 * roi.detection_rate).toLocaleString(
+                    {Math.floor(roi.bescom_consumers * 0.015 * roi.detection_rate).toLocaleString(
                       'en-IN',
                     )}
                   </td>
@@ -159,16 +169,16 @@ function ROICalculator() {
                 </tr>
                 <tr>
                   <td>Annual platform cost (est.)</td>
-                  <td>₹2.0 Cr</td>
+                  <td>₹15 Cr</td>
                 </tr>
               </tbody>
             </table>
           </div>
 
           <div className="roi-note">
-            <strong>Methodology:</strong> Assumes 3% active-theft prevalence (industry standard for
-            Indian DISCOMs), Rs. 6.50/unit tariff, and prioritised inspection queue reducing field
-            labour by 65% vs random sampling. Platform cost includes infra + ops + 2 FTE support.
+            <strong>Methodology:</strong> Assumes 1.5% active-theft prevalence (conservative BESCOM
+            estimate; industry range 1–3%), Rs. 6.50/unit tariff, and prioritised inspection queue
+            reducing field labour by 65% vs random sampling. Platform cost includes infra + ops + 10 FTE support.
           </div>
         </>
       )}
