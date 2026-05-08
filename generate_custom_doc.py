@@ -181,7 +181,30 @@ def generate_document():
     pdf.set_font('helvetica', '', 10)
     pdf.set_text_color(100, 116, 139)
     pdf.cell(0, 8, 'Hackathon Submission  ·  AI for Bharat  ·  Theme 8: Smart Meter Intelligence & Loss Detection', new_x='LMARGIN', new_y='NEXT', align='C')
-    pdf.ln(20)
+    pdf.ln(14)
+
+    # Team box
+    box_x, box_w, box_h = 40, pdf.w - 80, 32
+    box_y = pdf.get_y()
+    # border + light fill
+    pdf.set_fill_color(219, 234, 254)        # blue-100
+    pdf.set_draw_color(*pdf.color_secondary)
+    pdf.set_line_width(0.8)
+    pdf.rect(box_x, box_y, box_w, box_h, 'DF')
+    # left accent stripe
+    pdf.set_fill_color(*pdf.color_secondary)
+    pdf.rect(box_x, box_y, 4, box_h, 'F')
+    # team name
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.set_text_color(*pdf.color_secondary)
+    pdf.set_xy(box_x + 9, box_y + 5)
+    pdf.cell(box_w - 12, 7, 'Team: Inference TimeOut', align='L')
+    # members
+    pdf.set_font('helvetica', '', 10)
+    pdf.set_text_color(*pdf.color_body)
+    pdf.set_xy(box_x + 9, box_y + 14)
+    pdf.cell(box_w - 12, 7, 'Asha Jyothi Boddu  &  Sai Srinidhi Repala', align='L')
+    pdf.ln(box_h + 6)
     
     # Table of Contents
     pdf.add_page()
