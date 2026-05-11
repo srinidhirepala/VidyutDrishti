@@ -151,6 +151,49 @@ VidyutDrishti/
 
 ---
 
+## Live Demo
+
+**Demo video:** https://drive.google.com/file/d/1LOgpMxeu2LzAK52B-go-8gtAn6rHe1Eu/view?usp=sharing
+
+### 7 Working Modules
+
+| Module | What it shows |
+|--------|---------------|
+| **Dashboard** | KPIs, 6 live charts, feeder forecast, loss by zone |
+| **Inspection Queue** | Ranked by Rs. × confidence, 14 active leads |
+| **Meter Lookup** | 4-layer drill-down, rule trace, confidence score |
+| **Zone Risk Map** | Leaflet heatmap, 8 DT localities |
+| **Feedback** | Inspector outcome capture, live queue and dashboard refresh |
+| **Evaluation Metrics** | Live precision=78%, recall=85%, F1=0.81, detection lag=6.2d |
+| **ROI Calculator** | Interactive sliders, scale projection, 5-yr NPV |
+
+---
+
+## Build Phases
+
+| Phase | Scope | Features |
+|-------|-------|----------|
+| **1 — Foundation** | Ingestion, schema, synthetic data | 01–04 |
+| **2 — Forecasting** | Seasonal baseline forecasting + zone risk | 05–07 |
+| **3 — Detection** | L0–L3, confidence, behaviour, leakage, queue | 08–16 |
+| **4 — UI & Ops** | API, dashboard, feedback, audit, eval, Docker | 17–22 |
+
+---
+
+## Development Protocol
+
+Every feature follows the same protocol:
+
+1. Implement the feature end-to-end in the appropriate package (`backend/`, `simulator/`, `frontend/`, `db/`, `infra/`)
+2. Write prototype-grade tests under `logs/<NN-feature-name>/tests/`
+3. Record test results in `logs/<NN-feature-name>/test_review.md`
+4. Record deviations from plan in `logs/<NN-feature-name>/changes.md`
+5. Record errors and resolutions in `logs/<NN-feature-name>/errors.md`
+6. Commit with a detailed message covering the feature, logs, and supporting docs
+7. Push to `origin/main`
+
+---
+
 ## Out of Scope
 
 - Real AMI / SCADA / MDM / billing integration
